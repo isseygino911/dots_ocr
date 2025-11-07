@@ -41,4 +41,4 @@ print("=" * 50)
 os.chdir("dots.ocr")
 
 # Just run it with the port as the first argument
-subprocess.run([sys.executable, "demo/demo_gradio.py", "7860"])
+subprocess.run([sys.executable, "demo/demo_gradio.py"])
