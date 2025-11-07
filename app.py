@@ -16,6 +16,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoProcessor
 from qwen_vl_utils import process_vision_info
 from PIL import Image
+
 import json
 import fitz  # PyMuPDF
 import io
