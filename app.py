@@ -10,23 +10,36 @@ if not os.path.exists("dots.ocr"):
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr", "--no-deps"], check=True)
 
-# Now create a simple working Gradio interface
+# Fix the module path issue by downloading to a path without periods
 import gradio as gr
 import torch
 from transformers import AutoModelForCausalLM, AutoProcessor
 from qwen_vl_utils import process_vision_info
-from PIL import Image
 import json
+import shutil
 
-print("Loading model...")
+print("Downloading model to local path...")
+# Download to a local directory without periods
+local_model_path = "./DotsOCR_model"
+
+if not os.path.exists(local_model_path):
+    from huggingface_hub import snapshot_download
+    snapshot_download(
+        repo_id="rednote-hilab/dots.ocr",
+        local_dir=local_model_path,
+        local_dir_use_symlinks=False
+    )
+
+print("Loading model from local path...")
 model = AutoModelForCausalLM.from_pretrained(
-    "rednote-hilab/dots.ocr",
+    local_model_path,
     attn_implementation="flash_attention_2",
     torch_dtype=torch.bfloat16,
     device_map="auto",
-    trust_remote_code=True
+    trust_remote_code=True,
+    local_files_only=True
 )
-processor = AutoProcessor.from_pretrained("rednote-hilab/dots.ocr", trust_remote_code=True)
+processor = AutoProcessor.from_pretrained(local_model_path, trust_remote_code=True, local_files_only=True)
 print("Model loaded!")
 
 def parse_image(image):
