@@ -35,4 +35,4 @@ def patched_launch(self, *args, **kwargs):
 gr.Blocks.launch = patched_launch
 
 # Now run the demo - it will use our patched launch
-exec(open("demo/demo_gradio.py").read())
+exec(open("demo/demo_gradio.py 7890").read())
