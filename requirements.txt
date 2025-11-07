@@ -8,7 +8,6 @@ pymupdf
 pillow
 accelerate
 huggingface_hub
-flash-attn==2.8.0.post2
 gradio_image_annotation
 openai
 modelscope
