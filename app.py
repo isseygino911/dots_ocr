@@ -2,43 +2,37 @@ import subprocess
 import sys
 import os
 
-print("=" * 50)
-print("Installing flash-attn (needs torch first)...")
-print("=" * 50)
-
-# Install flash-attn now that torch is available
+# Install flash-attn
 subprocess.run([
     sys.executable, "-m", "pip", "install",
     "flash-attn==2.8.0.post2", "--no-build-isolation"
 ], check=True)
 
-print("=" * 50)
-print("Cloning dots.ocr repository...")
-print("=" * 50)
-
-# Clone dots.ocr if not exists
+# Clone and install dots.ocr
 if not os.path.exists("dots.ocr"):
-    subprocess.run([
-        "git", "clone", 
-        "https://github.com/rednote-hilab/dots.ocr.git"
-    ], check=True)
+    subprocess.run(["git", "clone", "https://github.com/rednote-hilab/dots.ocr.git"], check=True)
 
-print("=" * 50)
-print("Installing dots.ocr...")
-print("=" * 50)
+subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr", "--no-deps"], check=True)
 
-# Install dots.ocr without dependencies
-subprocess.run([
-    sys.executable, "-m", "pip", "install", 
-    "-e", "./dots.ocr", "--no-deps"
-], check=True)
+# Add to Python path
+sys.path.insert(0, "./dots.ocr")
+os.chdir("./dots.ocr")
 
-print("=" * 50)
-print("Starting Gradio interface...")
-print("=" * 50)
+# Import and run their demo with proper server settings
+import demo.demo_gradio as demo_module
 
-# Run the demo - their script doesn't support those arguments
-os.chdir("dots.ocr")
+# Monkey-patch the launch call to work with HF Spaces
+import gradio as gr
+original_launch = gr.Blocks.launch
 
-# Just run it with the port as the first argument
-subprocess.run([sys.executable, "demo/demo_gradio.py"])
+def patched_launch(self, *args, **kwargs):
+    # Override with HF Spaces compatible settings
+    kwargs['server_name'] = '0.0.0.0'
+    kwargs['server_port'] = 7860
+    kwargs['share'] = False
+    return original_launch(self, *args, **kwargs)
+
+gr.Blocks.launch = patched_launch
+
+# Now run the demo - it will use our patched launch
+exec(open("demo/demo_gradio.py").read())
