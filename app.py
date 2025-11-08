@@ -10,10 +10,11 @@ if not os.path.exists("dots.ocr"):
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr", "--no-deps"], check=True)
 
-# Download model to ABSOLUTE path at ./weights/DotsOCR
-print("Downloading model to ./weights/DotsOCR...")
-os.makedirs("./weights", exist_ok=True)
-model_path = os.path.abspath("./weights/DotsOCR")
+# Download model to /home/user/app/weights/DotsOCR (BEFORE cd to dots.ocr)
+print("Downloading model...")
+weights_dir = os.path.abspath("./weights")
+os.makedirs(weights_dir, exist_ok=True)
+model_path = os.path.join(weights_dir, "DotsOCR")
 
 if not os.path.exists(model_path):
     from huggingface_hub import snapshot_download
@@ -23,14 +24,17 @@ if not os.path.exists(model_path):
         local_dir_use_symlinks=False
     )
 
-print(f"Model downloaded to: {model_path}")
+print(f"Model ready at: {model_path}")
 
-# Patch the parser to use absolute path
+# Add dots.ocr to path
 sys.path.insert(0, os.path.abspath("./dots.ocr"))
 
+# Patch parser BEFORE importing/executing
 import dots_ocr.parser as parser_module
 
-# Monkey-patch the hardcoded path to use absolute path
+# Store the absolute model path for the patch
+ABSOLUTE_MODEL_PATH = model_path
+
 original_load = parser_module.DotsOCRParser._load_hf_model
 
 def patched_load(self):
@@ -38,29 +42,25 @@ def patched_load(self):
     from transformers import AutoModelForCausalLM, AutoProcessor
     from qwen_vl_utils import process_vision_info
     
-    # Use ABSOLUTE path instead of relative
-    model_path_abs = os.path.abspath("./weights/DotsOCR")
-    print(f"Loading model from: {model_path_abs}")
+    print(f"Loading HF model from: {ABSOLUTE_MODEL_PATH}")
     
     self.model = AutoModelForCausalLM.from_pretrained(
-        model_path_abs,
+        ABSOLUTE_MODEL_PATH,
         attn_implementation="flash_attention_2",
         torch_dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
-        local_files_only=True
     )
     self.processor = AutoProcessor.from_pretrained(
-        model_path_abs, 
+        ABSOLUTE_MODEL_PATH,
         trust_remote_code=True,
-        use_fast=True,
-        local_files_only=True
+        use_fast=True
     )
     self.process_vision_info = process_vision_info
 
 parser_module.DotsOCRParser._load_hf_model = patched_load
 
-# Change to dots.ocr directory and run demo
+# NOW change to dots.ocr directory
 os.chdir("./dots.ocr")
 
 # Modify demo to use HF backend
