@@ -10,7 +10,7 @@ if not os.path.exists("dots.ocr"):
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr", "--no-deps"], check=True)
 
-# Download model to /home/user/app/weights/DotsOCR (BEFORE cd to dots.ocr)
+# Download model to /home/user/app/weights/DotsOCR
 print("Downloading model...")
 weights_dir = os.path.abspath("./weights")
 os.makedirs(weights_dir, exist_ok=True)
@@ -29,10 +29,9 @@ print(f"Model ready at: {model_path}")
 # Add dots.ocr to path
 sys.path.insert(0, os.path.abspath("./dots.ocr"))
 
-# Patch parser BEFORE importing/executing
+# Patch parser
 import dots_ocr.parser as parser_module
 
-# Store the absolute model path for the patch
 ABSOLUTE_MODEL_PATH = model_path
 
 original_load = parser_module.DotsOCRParser._load_hf_model
@@ -60,14 +59,15 @@ def patched_load(self):
 
 parser_module.DotsOCRParser._load_hf_model = patched_load
 
-# NOW change to dots.ocr directory
+# Change to dots.ocr directory
 os.chdir("./dots.ocr")
 
-# Modify demo to use HF backend
+# Modify demo to use HF backend AND fix Gradio compatibility
 demo_file = "demo/demo_gradio.py"
 with open(demo_file, 'r') as f:
     demo_code = f.read()
 
+# Add use_hf=True
 demo_code = demo_code.replace(
     '''dots_parser = DotsOCRParser(
     ip=DEFAULT_CONFIG['ip'],
@@ -85,6 +85,14 @@ demo_code = demo_code.replace(
     use_hf=True
 )'''
 )
+
+# Fix Gradio 4.44.0 compatibility - remove max_height and show_copy_button
+demo_code = demo_code.replace('max_height=600,', '')
+demo_code = demo_code.replace('show_copy_button=True,', '')
+demo_code = demo_code.replace('show_copy_button=False,', '')
+
+# Fix theme issue
+demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
 sys.argv = ['demo_gradio.py', '7860']
 
