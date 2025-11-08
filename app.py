@@ -20,41 +20,29 @@ if not os.path.exists(local_model_path):
         local_dir=local_model_path,
         local_dir_use_symlinks=False
     )
-    print("Model downloaded!")
 
-# Set environment variable to use local model
-os.environ['HF_MODEL_PATH'] = os.path.abspath(local_model_path)
+print("Model downloaded. Starting Gradio with HF Transformers backend...")
 
-# Change to dots.ocr directory
-os.chdir("dots.ocr")
+# Now patch their demo to work with HF Transformers instead of vLLM
+sys.path.insert(0, "./dots.ocr")
+os.chdir("./dots.ocr")
 
-# Modify demo_gradio.py to use local model path instead of HuggingFace Hub
-print("Patching demo_gradio.py to use local model...")
-with open("demo/demo_gradio.py", "r") as f:
-    demo_code = f.read()
+# Modify the DotsOCRParser to use HuggingFace backend by default
+import dots_ocr.parser as parser_module
 
-# Replace model path
-demo_code = demo_code.replace(
-    'model_path = "rednote-hilab/dots.ocr"',
-    f'model_path = "{os.path.abspath(local_model_path)}"'
-)
+# Monkey-patch to use HuggingFace backend
+original_init = parser_module.DotsOCRParser.__init__
 
-# Add local_files_only=True
-demo_code = demo_code.replace(
-    'trust_remote_code=True',
-    'trust_remote_code=True, local_files_only=True'
-)
+def patched_init(self, *args, **kwargs):
+    # Force use_hf=True for HuggingFace Spaces
+    kwargs['use_hf'] = True
+    kwargs['model_path'] = local_model_path
+    return original_init(self, *args, **kwargs)
 
-# Fix launch to work with HF Spaces
-demo_code = demo_code.replace(
-    'demo.launch()',
-    'demo.launch(server_name="0.0.0.0", server_port=7860, share=False)'
-)
+parser_module.DotsOCRParser.__init__ = patched_init
 
-# Write patched version
-with open("demo/demo_gradio_patched.py", "w") as f:
-    f.write(demo_code)
+# Now run their demo, but pass port 7860
+sys.argv = ['demo_gradio.py', '7860']
 
-print("Starting original demo_gradio.py...")
-# Run the patched demo
-subprocess.run([sys.executable, "demo/demo_gradio_patched.py"])
+# Execute their demo
+exec(open('demo/demo_gradio.py').read())
