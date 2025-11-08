@@ -10,7 +10,7 @@ if not os.path.exists("dots.ocr"):
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr", "--no-deps"], check=True)
 
-print("Downloading model to path without periods...")
+print("Downloading model...")
 local_model_path = "./DotsOCR_model"
 
 if not os.path.exists(local_model_path):
@@ -21,33 +21,32 @@ if not os.path.exists(local_model_path):
         local_dir_use_symlinks=False
     )
 
-print("Model downloaded. Starting Gradio with HF Transformers backend...")
+print("Setting up environment...")
 
-# Add dots.ocr to Python path BEFORE importing
+# Set environment variable for the model path
+os.environ['HF_MODEL_PATH'] = os.path.abspath(local_model_path)
+
+# Add dots.ocr to path
 sys.path.insert(0, os.path.abspath("./dots.ocr"))
 
-# Now import and patch
-from dots_ocr.parser import DotsOCRParser
+# Modify the demo script to use HF backend
+demo_file = "./dots.ocr/demo/demo_gradio.py"
 
-# Monkey-patch to use HuggingFace backend
-original_init = DotsOCRParser.__init__
+with open(demo_file, 'r') as f:
+    demo_code = f.read()
 
-def patched_init(self, ip=None, port=None, *args, **kwargs):
-    # Force use_hf=True for HuggingFace Spaces
-    kwargs['use_hf'] = True
-    kwargs['model_path'] = local_model_path
-    # Don't need ip/port for HF backend
-    return original_init(self, ip=ip or "127.0.0.1", port=port or 8000, *args, **kwargs)
+# Replace the DotsOCRParser instantiation to use HF backend
+demo_code = demo_code.replace(
+    "dots_parser = DotsOCRParser(",
+    "dots_parser = DotsOCRParser(use_hf=True, "
+)
 
-DotsOCRParser.__init__ = patched_init
-
-# Change to dots.ocr directory and run their demo
+# Change to dots.ocr directory
 os.chdir("./dots.ocr")
 
-# Set command-line arguments for their demo
+# Set port argument
 sys.argv = ['demo_gradio.py', '7860']
 
-# Execute their demo
-with open('demo/demo_gradio.py', 'r') as f:
-    demo_code = f.read()
-    exec(demo_code)
+# Execute modified demo
+print("Starting Gradio demo with HF Transformers backend...")
+exec(demo_code)
