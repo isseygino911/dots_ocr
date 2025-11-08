@@ -10,43 +10,54 @@ if not os.path.exists("dots.ocr"):
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr", "--no-deps"], check=True)
 
-print("Downloading model...")
-local_model_path = "./DotsOCR_model"
+# Download model to the path their code expects: ./weights/DotsOCR
+print("Downloading model to ./weights/DotsOCR...")
+os.makedirs("./weights", exist_ok=True)
+model_path = "./weights/DotsOCR"
 
-if not os.path.exists(local_model_path):
+if not os.path.exists(model_path):
     from huggingface_hub import snapshot_download
     snapshot_download(
         repo_id="rednote-hilab/dots.ocr",
-        local_dir=local_model_path,
+        local_dir=model_path,
         local_dir_use_symlinks=False
     )
 
-print("Setting up environment...")
-
-# Set environment variable for the model path
-os.environ['HF_MODEL_PATH'] = os.path.abspath(local_model_path)
+print("Model ready. Starting demo...")
 
 # Add dots.ocr to path
 sys.path.insert(0, os.path.abspath("./dots.ocr"))
 
-# Modify the demo script to use HF backend
-demo_file = "./dots.ocr/demo/demo_gradio.py"
+# Change to dots.ocr directory
+os.chdir("./dots.ocr")
 
+# Modify demo to use HF backend
+demo_file = "demo/demo_gradio.py"
 with open(demo_file, 'r') as f:
     demo_code = f.read()
 
-# Replace the DotsOCRParser instantiation to use HF backend
+# Add use_hf=True to DotsOCRParser instantiation
 demo_code = demo_code.replace(
-    "dots_parser = DotsOCRParser(",
-    "dots_parser = DotsOCRParser(use_hf=True, "
+    '''dots_parser = DotsOCRParser(
+    ip=DEFAULT_CONFIG['ip'],
+    port=DEFAULT_CONFIG['port_vllm'],
+    dpi=200,
+    min_pixels=DEFAULT_CONFIG['min_pixels'],
+    max_pixels=DEFAULT_CONFIG['max_pixels']
+)''',
+    '''dots_parser = DotsOCRParser(
+    ip=DEFAULT_CONFIG['ip'],
+    port=DEFAULT_CONFIG['port_vllm'],
+    dpi=200,
+    min_pixels=DEFAULT_CONFIG['min_pixels'],
+    max_pixels=DEFAULT_CONFIG['max_pixels'],
+    use_hf=True
+)'''
 )
-
-# Change to dots.ocr directory
-os.chdir("./dots.ocr")
 
 # Set port argument
 sys.argv = ['demo_gradio.py', '7860']
 
-# Execute modified demo
-print("Starting Gradio demo with HF Transformers backend...")
+# Execute
+print("Launching Gradio demo with HF Transformers backend...")
 exec(demo_code)
