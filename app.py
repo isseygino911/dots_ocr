@@ -23,26 +23,31 @@ if not os.path.exists(local_model_path):
 
 print("Model downloaded. Starting Gradio with HF Transformers backend...")
 
-# Now patch their demo to work with HF Transformers instead of vLLM
-sys.path.insert(0, "./dots.ocr")
-os.chdir("./dots.ocr")
+# Add dots.ocr to Python path BEFORE importing
+sys.path.insert(0, os.path.abspath("./dots.ocr"))
 
-# Modify the DotsOCRParser to use HuggingFace backend by default
-import dots_ocr.parser as parser_module
+# Now import and patch
+from dots_ocr.parser import DotsOCRParser
 
 # Monkey-patch to use HuggingFace backend
-original_init = parser_module.DotsOCRParser.__init__
+original_init = DotsOCRParser.__init__
 
-def patched_init(self, *args, **kwargs):
+def patched_init(self, ip=None, port=None, *args, **kwargs):
     # Force use_hf=True for HuggingFace Spaces
     kwargs['use_hf'] = True
     kwargs['model_path'] = local_model_path
-    return original_init(self, *args, **kwargs)
+    # Don't need ip/port for HF backend
+    return original_init(self, ip=ip or "127.0.0.1", port=port or 8000, *args, **kwargs)
 
-parser_module.DotsOCRParser.__init__ = patched_init
+DotsOCRParser.__init__ = patched_init
 
-# Now run their demo, but pass port 7860
+# Change to dots.ocr directory and run their demo
+os.chdir("./dots.ocr")
+
+# Set command-line arguments for their demo
 sys.argv = ['demo_gradio.py', '7860']
 
 # Execute their demo
-exec(open('demo/demo_gradio.py').read())
+with open('demo/demo_gradio.py', 'r') as f:
+    demo_code = f.read()
+    exec(demo_code)
