@@ -29,7 +29,7 @@ print(f"Model downloaded to: {model_path}")
 
 os.chdir("./dots.ocr")
 
-print("Patching demo for HF backend with optimizations...")
+print("Patching demo for GPU-only inference...")
 sys.path.insert(0, os.getcwd())
 
 import dots_ocr.parser as parser_module
@@ -41,26 +41,29 @@ def patched_load(self):
     from transformers import AutoModelForCausalLM, AutoProcessor
     from qwen_vl_utils import process_vision_info
     
+    # ENFORCE GPU REQUIREMENT
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA GPU is required but not available! Please use a GPU-enabled environment.")
+    
     model_path = os.path.abspath("./weights/DotsOCR")
     print(f"Loading model from: {model_path}")
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
     
-    # Optimized loading for L4 GPU
+    # Load directly to GPU (cuda:0)
     self.model = AutoModelForCausalLM.from_pretrained(
         model_path,
         attn_implementation="flash_attention_2",
         torch_dtype=torch.bfloat16,
-        device_map="auto",
+        device_map="cuda:0",  # Force GPU 0
         trust_remote_code=True,
     )
     
-    # Set model to eval mode for faster inference
     self.model.eval()
     
-    # Enable CUDA optimizations
-    if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+    # GPU optimizations
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
     
     self.processor = AutoProcessor.from_pretrained(
         model_path,
@@ -69,15 +72,12 @@ def patched_load(self):
     )
     self.process_vision_info = process_vision_info
     
-    print(f"Model loaded on device: {self.model.device}")
-    print(f"CUDA available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+    print(f"✅ Model loaded on GPU")
+    print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
 
 parser_module.DotsOCRParser._load_hf_model = patched_load
 
-# Also optimize the inference method
+# Optimize inference
 original_inference = parser_module.DotsOCRParser._inference_with_hf
 
 def optimized_inference(self, image, prompt):
@@ -93,7 +93,6 @@ def optimized_inference(self, image, prompt):
         }
     ]
 
-    # Preparation for inference
     text = self.processor.apply_chat_template(
         messages, 
         tokenize=False, 
@@ -108,18 +107,15 @@ def optimized_inference(self, image, prompt):
         return_tensors="pt",
     )
 
-    inputs = inputs.to("cuda")
+    inputs = inputs.to("cuda")  # Explicitly to CUDA
 
-    # Optimized generation parameters for speed
-    with torch.inference_mode():  # Faster than no_grad
+    with torch.inference_mode():
         generated_ids = self.model.generate(
             **inputs, 
-            max_new_tokens=12000,  # Reduced from 24000 for faster generation
-            do_sample=False,  # Greedy decoding is faster
-            num_beams=1,  # No beam search for speed
-            temperature=None,  # Not used with do_sample=False
-            top_p=None,  # Not used with do_sample=False
-            use_cache=True,  # Enable KV cache
+            max_new_tokens=12000,
+            do_sample=False,
+            num_beams=1,
+            use_cache=True,
         )
         
     generated_ids_trimmed = [
@@ -129,9 +125,7 @@ def optimized_inference(self, image, prompt):
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0]
     
-    # Clear cache after inference
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
     
     return response
 
@@ -140,7 +134,6 @@ parser_module.DotsOCRParser._inference_with_hf = optimized_inference
 with open("demo/demo_gradio.py", 'r') as f:
     demo_code = f.read()
 
-# Enable HF backend
 demo_code = demo_code.replace(
     '''dots_parser = DotsOCRParser(
     ip=DEFAULT_CONFIG['ip'],
@@ -159,13 +152,11 @@ demo_code = demo_code.replace(
 )'''
 )
 
-# Fix Gradio 4.44.0 compatibility
 demo_code = demo_code.replace('max_height=600,', '')
 demo_code = demo_code.replace('show_copy_button=True,', '')
 demo_code = demo_code.replace('show_copy_button=False,', '')
 demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
-# Reorganize layout
 old_layout = '''            with gr.Column(scale=6, variant="compact"):
                 with gr.Row():
                     # Result Image
@@ -233,7 +224,6 @@ old_layout = '''            with gr.Column(scale=6, variant="compact"):
                                 )'''
 
 new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="main_content_column"):
-                # Preview section
                 with gr.Group(elem_id="preview_section"):
                     gr.Markdown("### 👁️ File Preview")
                     result_image = gr.Image(
@@ -257,7 +247,6 @@ new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="
                         elem_id="info_box"
                     )
                 
-                # Results section
                 with gr.Group(elem_id="results_section"):
                     gr.Markdown("### ✔️ Result Display")
                     
@@ -294,7 +283,6 @@ new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="
 
 demo_code = demo_code.replace(old_layout, new_layout)
 
-# Add CSS
 css_addition = '''
     
     #main_content_column {
@@ -352,5 +340,5 @@ demo_code = demo_code.replace(
 )
 
 sys.argv = ['demo_gradio.py', '7860']
-print("Starting optimized Gradio demo on port 7860...")
+print("Starting GPU-only optimized demo on port 7860...")
 exec(demo_code)
