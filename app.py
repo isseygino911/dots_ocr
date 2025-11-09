@@ -88,8 +88,7 @@ demo_code = demo_code.replace('show_copy_button=True,', '')
 demo_code = demo_code.replace('show_copy_button=False,', '')
 demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
-# Reorganize layout: Preview on top, results below
-# Find the main layout section with gr.Row()
+# Reorganize layout with proper containment
 old_layout = '''            with gr.Column(scale=6, variant="compact"):
                 with gr.Row():
                     # Result Image
@@ -156,85 +155,138 @@ old_layout = '''            with gr.Column(scale=6, variant="compact"):
                                     show_label=False
                                 )'''
 
-new_layout = '''            with gr.Column(scale=6, variant="compact"):
-                # Preview on top
-                gr.Markdown("### 👁️ File Preview")
-                result_image = gr.Image(
-                    label="Layout Preview",
-                    visible=True,
-                    height=500,
-                    show_label=False
-                )
-                
-                # Page navigation
-                with gr.Row():
-                    prev_btn = gr.Button("⬅ Previous", size="sm")
-                    page_info = gr.HTML(
-                        value="<div id='page_info_box'>0 / 0</div>", 
-                        elem_id="page_info_html"
+new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="main_content_column"):
+                # Preview section
+                with gr.Group(elem_id="preview_section"):
+                    gr.Markdown("### 👁️ File Preview")
+                    result_image = gr.Image(
+                        label="Layout Preview",
+                        visible=True,
+                        height=500,
+                        show_label=False,
+                        elem_id="result_image"
                     )
-                    next_btn = gr.Button("Next ➡", size="sm")
-                
-                # Info Display
-                info_display = gr.Markdown(
-                    "Waiting for processing results...",
-                    elem_id="info_box"
-                )
-                
-                # Results below
-                gr.Markdown("### ✔️ Result Display")
-                
-                with gr.Tabs(elem_id="markdown_tabs"):
-                    with gr.TabItem("Markdown Render Preview"):
-                        md_output = gr.Markdown(
-                            "## Please click the parse button to parse or select for single-task recognition...",
-                            latex_delimiters=[
-                                {"left": "$$", "right": "$$", "display": True},
-                                {"left": "$", "right": "$", "display": False}
-                            ],
-                            elem_id="markdown_output"
-                        )
                     
-                    with gr.TabItem("Markdown Raw Text"):
-                        md_raw_output = gr.Textbox(
-                            value="🕐 Waiting for parsing result...",
-                            label="Markdown Raw Text",
-                            max_lines=100,
-                            lines=20,
-                            elem_id="markdown_output",
-                            show_label=False
+                    # Page navigation
+                    with gr.Row():
+                        prev_btn = gr.Button("⬅ Previous", size="sm")
+                        page_info = gr.HTML(
+                            value="<div id='page_info_box'>0 / 0</div>", 
+                            elem_id="page_info_html"
                         )
+                        next_btn = gr.Button("Next ➡", size="sm")
                     
-                    with gr.TabItem("Current Page JSON"):
-                        current_page_json = gr.Textbox(
-                            value="🕐 Waiting for parsing result...",
-                            label="Current Page JSON",
-                            max_lines=100,
-                            lines=20,
-                            elem_id="markdown_output",
-                            show_label=False
-                        )'''
+                    # Info Display
+                    info_display = gr.Markdown(
+                        "Waiting for processing results...",
+                        elem_id="info_box"
+                    )
+                
+                # Results section - contained properly
+                with gr.Group(elem_id="results_section"):
+                    gr.Markdown("### ✔️ Result Display")
+                    
+                    with gr.Tabs(elem_id="markdown_tabs"):
+                        with gr.TabItem("Markdown Render Preview"):
+                            md_output = gr.Markdown(
+                                "## Please click the parse button to parse or select for single-task recognition...",
+                                latex_delimiters=[
+                                    {"left": "$$", "right": "$$", "display": True},
+                                    {"left": "$", "right": "$", "display": False}
+                                ],
+                                elem_id="markdown_output"
+                            )
+                        
+                        with gr.TabItem("Markdown Raw Text"):
+                            md_raw_output = gr.Textbox(
+                                value="🕐 Waiting for parsing result...",
+                                label="Markdown Raw Text",
+                                max_lines=100,
+                                lines=20,
+                                elem_id="markdown_raw_output",
+                                show_label=False
+                            )
+                        
+                        with gr.TabItem("Current Page JSON"):
+                            current_page_json = gr.Textbox(
+                                value="🕐 Waiting for parsing result...",
+                                label="Current Page JSON",
+                                max_lines=100,
+                                lines=20,
+                                elem_id="json_output",
+                                show_label=False
+                            )'''
 
 demo_code = demo_code.replace(old_layout, new_layout)
 
-# Add CSS fixes
+# Add comprehensive CSS fixes for containment
 css_addition = '''
     
-    /* Fix overflow and scrolling */
-    #markdown_output {
-        overflow: auto;
-        max-width: 100%;
+    /* Main content column */
+    #main_content_column {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
     }
     
-    /* Ensure preview always shows */
-    #result_image {
-        display: block !important;
+    /* Preview section containment */
+    #preview_section {
+        width: 100%;
+        overflow: hidden;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+    }
+    
+    /* Results section containment - CRITICAL */
+    #results_section {
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+    }
+    
+    /* Markdown tabs container */
+    #markdown_tabs {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+    }
+    
+    /* Markdown output containment */
+    #markdown_output {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: auto !important;
+        max-height: 600px;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+    
+    #markdown_output .prose {
+        max-width: 100% !important;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    
+    /* Text outputs */
+    #markdown_raw_output, #json_output {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    /* Ensure all content stays within bounds */
+    #results_section * {
+        max-width: 100%;
+        box-sizing: border-box;
     }
 '''
 
 demo_code = demo_code.replace('    footer {', css_addition + '\n    footer {')
 
-# Suppress console warnings by adding to the end
+# Suppress warnings
 demo_code = demo_code.replace(
     'demo.launch(server_name="0.0.0.0", server_port=port, debug=True)',
     'demo.launch(server_name="0.0.0.0", server_port=port, show_api=False)'
