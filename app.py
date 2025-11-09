@@ -2,21 +2,17 @@
 import subprocess
 import sys
 import os
-import time
 
 print("Installing dependencies...")
 subprocess.run([sys.executable, "-m", "pip", "install", "flash-attn==2.8.0.post2", "--no-build-isolation"], check=True)
 
-# Clone their repo
 if not os.path.exists("dots.ocr"):
     print("Cloning dots.ocr repository...")
     subprocess.run(["git", "clone", "https://github.com/rednote-hilab/dots.ocr.git"], check=True)
 
-# Install dots.ocr
 print("Installing dots.ocr...")
 subprocess.run([sys.executable, "-m", "pip", "install", "-e", "./dots.ocr"], check=True)
 
-# Download model to weights/DotsOCR (their expected location)
 print("Downloading model...")
 os.makedirs("./dots.ocr/weights", exist_ok=True)
 model_path = os.path.abspath("./dots.ocr/weights/DotsOCR")
@@ -31,14 +27,11 @@ if not os.path.exists(model_path):
 
 print(f"Model downloaded to: {model_path}")
 
-# Change to their directory
 os.chdir("./dots.ocr")
 
-# Patch their demo to use HF backend with correct path
 print("Patching demo for HF backend...")
 sys.path.insert(0, os.getcwd())
 
-# Patch the parser module before it loads
 import dots_ocr.parser as parser_module
 
 original_load = parser_module.DotsOCRParser._load_hf_model
@@ -67,7 +60,6 @@ def patched_load(self):
 
 parser_module.DotsOCRParser._load_hf_model = patched_load
 
-# Modify demo file to enable HF backend and fix Gradio issues
 with open("demo/demo_gradio.py", 'r') as f:
     demo_code = f.read()
 
@@ -96,33 +88,158 @@ demo_code = demo_code.replace('show_copy_button=True,', '')
 demo_code = demo_code.replace('show_copy_button=False,', '')
 demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
-# Add CSS to fix overflow and contain content properly
-css_fix = '''
+# Reorganize layout: Preview on top, results below
+# Find the main layout section with gr.Row()
+old_layout = '''            with gr.Column(scale=6, variant="compact"):
+                with gr.Row():
+                    # Result Image
+                    with gr.Column(scale=3):
+                        gr.Markdown("### 👁️ File Preview")
+                        result_image = gr.Image(
+                            label="Layout Preview",
+                            visible=True,
+                            height=800,
+                            show_label=False
+                        )
+                        
+                        # Page navigation (shown during PDF preview)
+                        with gr.Row():
+                            prev_btn = gr.Button("⬅ Previous", size="sm")
+                            page_info = gr.HTML(
+                                value="<div id='page_info_box'>0 / 0</div>", 
+                                elem_id="page_info_html"
+                            )
+                            next_btn = gr.Button("Next ➡", size="sm")
+                        
+                        # Info Display
+                        info_display = gr.Markdown(
+                            "Waiting for processing results...",
+                            elem_id="info_box"
+                        )
+                    
+                    # Markdown Result
+                    with gr.Column(scale=3):
+                        gr.Markdown("### ✔️ Result Display")
+                        
+                        with gr.Tabs(elem_id="markdown_tabs"):
+                            with gr.TabItem("Markdown Render Preview"):
+                                md_output = gr.Markdown(
+                                    "## Please click the parse button to parse or select for single-task recognition...",
+                                    
+                                    latex_delimiters=[
+                                        {"left": "$$", "right": "$$", "display": True},
+                                        {"left": "$", "right": "$", "display": False}
+                                    ],
+                                    
+                                    elem_id="markdown_output"
+                                )
+                            
+                            with gr.TabItem("Markdown Raw Text"):
+                                md_raw_output = gr.Textbox(
+                                    value="🕐 Waiting for parsing result...",
+                                    label="Markdown Raw Text",
+                                    max_lines=100,
+                                    lines=38,
+                                    
+                                    elem_id="markdown_output",
+                                    show_label=False
+                                )
+                            
+                            with gr.TabItem("Current Page JSON"):
+                                current_page_json = gr.Textbox(
+                                    value="🕐 Waiting for parsing result...",
+                                    label="Current Page JSON",
+                                    max_lines=100,
+                                    lines=38,
+                                    
+                                    elem_id="markdown_output",
+                                    show_label=False
+                                )'''
+
+new_layout = '''            with gr.Column(scale=6, variant="compact"):
+                # Preview on top
+                gr.Markdown("### 👁️ File Preview")
+                result_image = gr.Image(
+                    label="Layout Preview",
+                    visible=True,
+                    height=500,
+                    show_label=False
+                )
+                
+                # Page navigation
+                with gr.Row():
+                    prev_btn = gr.Button("⬅ Previous", size="sm")
+                    page_info = gr.HTML(
+                        value="<div id='page_info_box'>0 / 0</div>", 
+                        elem_id="page_info_html"
+                    )
+                    next_btn = gr.Button("Next ➡", size="sm")
+                
+                # Info Display
+                info_display = gr.Markdown(
+                    "Waiting for processing results...",
+                    elem_id="info_box"
+                )
+                
+                # Results below
+                gr.Markdown("### ✔️ Result Display")
+                
+                with gr.Tabs(elem_id="markdown_tabs"):
+                    with gr.TabItem("Markdown Render Preview"):
+                        md_output = gr.Markdown(
+                            "## Please click the parse button to parse or select for single-task recognition...",
+                            latex_delimiters=[
+                                {"left": "$$", "right": "$$", "display": True},
+                                {"left": "$", "right": "$", "display": False}
+                            ],
+                            elem_id="markdown_output"
+                        )
+                    
+                    with gr.TabItem("Markdown Raw Text"):
+                        md_raw_output = gr.Textbox(
+                            value="🕐 Waiting for parsing result...",
+                            label="Markdown Raw Text",
+                            max_lines=100,
+                            lines=20,
+                            elem_id="markdown_output",
+                            show_label=False
+                        )
+                    
+                    with gr.TabItem("Current Page JSON"):
+                        current_page_json = gr.Textbox(
+                            value="🕐 Waiting for parsing result...",
+                            label="Current Page JSON",
+                            max_lines=100,
+                            lines=20,
+                            elem_id="markdown_output",
+                            show_label=False
+                        )'''
+
+demo_code = demo_code.replace(old_layout, new_layout)
+
+# Add CSS fixes
+css_addition = '''
+    
+    /* Fix overflow and scrolling */
     #markdown_output {
-        min-height: 800px;
-        max-height: 800px;
         overflow: auto;
+        max-width: 100%;
     }
     
-    /* Ensure columns don't overflow */
-    .gr-box {
-        overflow: hidden;
-    }
-    
-    /* Fix markdown rendering container */
-    #markdown_output .prose {
-        max-width: 100% !important;
-        overflow-wrap: break-word;
+    /* Ensure preview always shows */
+    #result_image {
+        display: block !important;
     }
 '''
 
-# Insert the CSS fix into the existing CSS
+demo_code = demo_code.replace('    footer {', css_addition + '\n    footer {')
+
+# Suppress console warnings by adding to the end
 demo_code = demo_code.replace(
-    '    css = """',
-    f'    css = """{css_fix}'
+    'demo.launch(server_name="0.0.0.0", server_port=port, debug=True)',
+    'demo.launch(server_name="0.0.0.0", server_port=port, show_api=False)'
 )
 
-# Run the demo
 sys.argv = ['demo_gradio.py', '7860']
 print("Starting Gradio demo on port 7860...")
 exec(demo_code)
