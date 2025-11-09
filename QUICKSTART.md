@@ -36,7 +36,7 @@ dots-ocr-parser/
 cd /Users/mac/Desktop/dots-ocr-parser
 
 # 2. Add your HF Spaces as remote (if not already added)
-git remote add hf https://huggingface.co/spaces/YOUR-USERNAME/YOUR-SPACE-NAME
+git remote add hf https://huggingface.co/spaces/isseygino911/dots-ocr-parser
 
 # 3. Commit the new FastAPI backend
 git add app.py requirements.txt .gitignore
@@ -52,10 +52,10 @@ git push hf main
 - HF Spaces will install dependencies
 - Download the DotsOCR model (~3GB)
 - Start the FastAPI server on port 7860
-- Your API will be available at: `https://YOUR-USERNAME-YOUR-SPACE.hf.space`
+- Your API will be available at: `https://isseygino911-dots-ocr-parser.hf.space`
 
 **Verify it worked:**
-- Visit: `https://YOUR-USERNAME-YOUR-SPACE.hf.space/docs`
+- Visit: `https://isseygino911-dots-ocr-parser.hf.space/docs`
 - You should see the FastAPI automatic API documentation
 
 ### Step 2: Test Backend Locally (Optional)
@@ -64,7 +64,7 @@ You can't run the backend on your Mac (no CUDA), but you can test it via the API
 
 ```bash
 # Test health endpoint
-curl https://YOUR-USERNAME-YOUR-SPACE.hf.space/health
+curl https://isseygino911-dots-ocr-parser.hf.space/health
 
 # Expected response:
 # {"status":"healthy","gpu_available":true}
@@ -77,7 +77,7 @@ curl https://YOUR-USERNAME-YOUR-SPACE.hf.space/health
 cd /Users/mac/Desktop/dots-ocr-parser/frontend
 
 # 2. Update backend URL in .env.development
-echo "VITE_API_BASE_URL=https://YOUR-USERNAME-YOUR-SPACE.hf.space" > .env.development
+echo "VITE_API_BASE_URL=https://isseygino911-dots-ocr-parser.hf.space" > .env.development
 
 # 3. Install dependencies (if not already done)
 npm install
@@ -99,7 +99,7 @@ npm run dev
 cd /Users/mac/Desktop/dots-ocr-parser/frontend
 
 # 2. Set production backend URL
-echo "VITE_API_BASE_URL=https://YOUR-USERNAME-YOUR-SPACE.hf.space" > .env.production
+echo "VITE_API_BASE_URL=https://isseygino911-dots-ocr-parser.hf.space" > .env.production
 
 # 3. Build
 npm run build
@@ -157,7 +157,7 @@ Click "Download ZIP" to get:
 **Cause:** Backend URL is wrong or backend is down
 
 **Solution:**
-1. Check backend is running: Visit `https://YOUR-USERNAME-YOUR-SPACE.hf.space/health`
+1. Check backend is running: Visit `https://isseygino911-dots-ocr-parser.hf.space/health`
 2. Verify `.env.development` or `.env.production` has correct URL
 3. Check browser console for CORS errors
 
@@ -198,24 +198,24 @@ Then push to HF Spaces again.
 ### Upload Image
 ```bash
 curl -X POST \
-  https://YOUR-SPACE.hf.space/api/parse/image \
+  https://isseygino911-dots-ocr-parser.hf.space/api/parse/image \
   -F "file=@test.jpg" \
   -F "prompt_mode=prompt_layout_all_en"
 ```
 
 ### Check Status
 ```bash
-curl https://YOUR-SPACE.hf.space/api/jobs/{job_id}/status
+curl https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/status
 ```
 
 ### Get Results
 ```bash
-curl https://YOUR-SPACE.hf.space/api/jobs/{job_id}/results
+curl https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/results
 ```
 
 ### Download ZIP
 ```bash
-curl -O https://YOUR-SPACE.hf.space/api/jobs/{job_id}/download
+curl -O https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/download
 ```
 
 ---
@@ -248,7 +248,7 @@ VITE_API_BASE_URL=http://localhost:7860  # or HF Spaces URL for testing
 
 **Production** (`.env.production`):
 ```bash
-VITE_API_BASE_URL=https://YOUR-USERNAME-YOUR-SPACE.hf.space
+VITE_API_BASE_URL=https://isseygino911-dots-ocr-parser.hf.space
 ```
 
 ---

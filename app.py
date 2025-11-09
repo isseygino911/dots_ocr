@@ -303,9 +303,18 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
             job_id, "processing", current_page=c, total_pages=t, progress_percent=(c/t)*100, message=m
         ))
 
-        # Process file
+        # Update status to processing
+        asyncio.run(update_job_status(
+            job_id,
+            status="processing",
+            progress_percent=0,
+            message="Starting document processing..."
+        ))
+
+        # Process file - specify output_dir to save results in job directory
         results = dots_parser.parse_file(
             input_path=str(file_path),
+            output_dir=str(result_dir),
             prompt_mode=prompt_mode,
             bbox=None
         )
@@ -314,13 +323,36 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
         if job_id in progress_callbacks:
             del progress_callbacks[job_id]
 
-        # Store results
-        job['results'] = results
-        job['result_dir'] = str(result_dir)
+        # Format results for API response
+        filename = file_path.stem
+        parsed_output_dir = result_dir / filename
 
-        # Create download package
-        zip_path = result_dir / f"{job_id}_results.zip"
-        shutil.make_archive(str(result_dir / f"{job_id}_results"), 'zip', str(file_path.parent))
+        # Build structured results
+        formatted_results = {
+            "pages": []
+        }
+
+        for idx, result in enumerate(results):
+            page_num = idx + 1
+            page_data = {
+                "page_number": page_num,
+                "markdown": result.get("markdown", ""),
+                "json_output": result,
+                "annotated_image_path": f"/api/results/{job_id}/{filename}/page_{page_num}.png"
+            }
+            formatted_results["pages"].append(page_data)
+
+        # Store formatted results
+        job['results'] = formatted_results
+        job['result_dir'] = str(result_dir)
+        job['parsed_output_dir'] = str(parsed_output_dir)
+
+        # Create download package - zip the actual parsed output directory
+        if parsed_output_dir.exists():
+            zip_base_path = result_dir / f"{job_id}_results"
+            shutil.make_archive(str(zip_base_path), 'zip', str(parsed_output_dir))
+        else:
+            print(f"Warning: Parsed output directory not found: {parsed_output_dir}")
 
         asyncio.run(update_job_status(
             job_id,
@@ -535,7 +567,7 @@ async def stream_progress(websocket: WebSocket, job_id: str):
             if not active_connections[job_id]:
                 del active_connections[job_id]
 
-@app.get("/api/results/{job_id}/{filename}")
+@app.get("/api/results/{job_id}/{filename:path}")
 async def get_result_file(job_id: str, filename: str):
     """Serve individual result files (images, JSON, markdown)"""
     if job_id not in jobs:
@@ -543,6 +575,15 @@ async def get_result_file(job_id: str, filename: str):
 
     result_dir = RESULTS_DIR / job_id
     file_path = result_dir / filename
+
+    # Security check: ensure the path is within result_dir
+    try:
+        file_path = file_path.resolve()
+        result_dir = result_dir.resolve()
+        if not str(file_path).startswith(str(result_dir)):
+            raise HTTPException(403, "Access denied")
+    except:
+        raise HTTPException(404, "File not found")
 
     if not file_path.exists():
         raise HTTPException(404, "File not found")

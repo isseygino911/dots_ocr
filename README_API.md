@@ -41,7 +41,7 @@ git push hf main
 
 3. **Access API docs:**
 ```
-https://YOUR-USERNAME-YOUR-SPACE.hf.space/docs
+https://isseygino911-dots-ocr-parser.hf.space/docs
 ```
 
 ### Frontend (Local Development)
@@ -59,7 +59,7 @@ npm install
 3. **Configure backend URL:**
 ```bash
 # Edit .env.development
-VITE_API_BASE_URL=https://YOUR-USERNAME-YOUR-SPACE.hf.space
+VITE_API_BASE_URL=https://isseygino911-dots-ocr-parser.hf.space
 ```
 
 4. **Run dev server:**

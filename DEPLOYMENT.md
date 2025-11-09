@@ -71,7 +71,7 @@ dots.ocr/weights/
 cd /Users/mac/Desktop/dots-ocr-parser
 
 # Add HF Spaces as remote (if not already added)
-git remote add hf https://huggingface.co/spaces/YOUR-USERNAME/YOUR-SPACE-NAME
+git remote add hf https://huggingface.co/spaces/isseygino911/dots-ocr-parser
 
 # Commit the changes
 git add app.py requirements.txt
@@ -91,9 +91,9 @@ git push hf main
 ### Step 5: Verify Backend is Running
 
 Once deployed, visit:
-- **API Root**: `https://YOUR-USERNAME-YOUR-SPACE.hf.space/`
-- **API Docs**: `https://YOUR-USERNAME-YOUR-SPACE.hf.space/docs`
-- **Health Check**: `https://YOUR-USERNAME-YOUR-SPACE.hf.space/health`
+- **API Root**: `https://isseygino911-dots-ocr-parser.hf.space/`
+- **API Docs**: `https://isseygino911-dots-ocr-parser.hf.space/docs`
+- **Health Check**: `https://isseygino911-dots-ocr-parser.hf.space/health`
 
 You should see the FastAPI automatic documentation at `/docs`.
 
@@ -102,7 +102,7 @@ You should see the FastAPI automatic documentation at `/docs`.
 Using curl or Postman, test the health endpoint:
 
 ```bash
-curl https://YOUR-USERNAME-YOUR-SPACE.hf.space/health
+curl https://isseygino911-dots-ocr-parser.hf.space/health
 ```
 
 Expected response:
@@ -133,10 +133,8 @@ Edit `.env.development` to point to your HF Spaces backend:
 
 ```bash
 # .env.development
-VITE_API_BASE_URL=https://YOUR-USERNAME-YOUR-SPACE.hf.space
+VITE_API_BASE_URL=https://isseygino911-dots-ocr-parser.hf.space
 ```
-
-**Important**: Replace `YOUR-USERNAME-YOUR-SPACE` with your actual HF Spaces URL.
 
 ### Step 3: Install Dependencies (if not already done)
 
@@ -174,7 +172,7 @@ The app will be available at: `http://localhost:5173`
 cd /Users/mac/Desktop/dots-ocr-parser/frontend
 
 # Update production environment variable
-echo "VITE_API_BASE_URL=https://YOUR-USERNAME-YOUR-SPACE.hf.space" > .env.production
+echo "VITE_API_BASE_URL=https://isseygino911-dots-ocr-parser.hf.space" > .env.production
 
 # Build for production
 npm run build
