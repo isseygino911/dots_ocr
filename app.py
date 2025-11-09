@@ -29,7 +29,7 @@ print(f"Model downloaded to: {model_path}")
 
 os.chdir("./dots.ocr")
 
-print("Patching demo for GPU-only inference...")
+print("Patching demo with progress tracking...")
 sys.path.insert(0, os.getcwd())
 
 import dots_ocr.parser as parser_module
@@ -41,26 +41,23 @@ def patched_load(self):
     from transformers import AutoModelForCausalLM, AutoProcessor
     from qwen_vl_utils import process_vision_info
     
-    # ENFORCE GPU REQUIREMENT
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA GPU is required but not available! Please use a GPU-enabled environment.")
+        raise RuntimeError("CUDA GPU is required but not available!")
     
     model_path = os.path.abspath("./weights/DotsOCR")
     print(f"Loading model from: {model_path}")
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     
-    # Load directly to GPU (cuda:0)
     self.model = AutoModelForCausalLM.from_pretrained(
         model_path,
         attn_implementation="flash_attention_2",
         torch_dtype=torch.bfloat16,
-        device_map="cuda:0",  # Force GPU 0
+        device_map="cuda:0",
         trust_remote_code=True,
     )
     
     self.model.eval()
     
-    # GPU optimizations
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -72,8 +69,7 @@ def patched_load(self):
     )
     self.process_vision_info = process_vision_info
     
-    print(f"✅ Model loaded on GPU")
-    print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+    print(f"✅ Model loaded")
 
 parser_module.DotsOCRParser._load_hf_model = patched_load
 
@@ -82,54 +78,92 @@ original_inference = parser_module.DotsOCRParser._inference_with_hf
 
 def optimized_inference(self, image, prompt):
     import torch
+    import time
     
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": prompt}
-            ]
-        }
-    ]
+    start = time.time()
+    print(f"🔄 Starting inference...")
+    
+    messages = [{"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
 
-    text = self.processor.apply_chat_template(
-        messages, 
-        tokenize=False, 
-        add_generation_prompt=True
-    )
+    text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, video_inputs = self.process_vision_info(messages)
-    inputs = self.processor(
-        text=[text],
-        images=image_inputs,
-        videos=video_inputs,
-        padding=True,
-        return_tensors="pt",
-    )
+    inputs = self.processor(text=[text], images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
+    inputs = inputs.to("cuda")
 
-    inputs = inputs.to("cuda")  # Explicitly to CUDA
+    print(f"⏱️  Preprocessing: {time.time()-start:.1f}s")
+    gen_start = time.time()
 
     with torch.inference_mode():
         generated_ids = self.model.generate(
             **inputs, 
-            max_new_tokens=12000,
+            max_new_tokens=6000,  # Further reduced
             do_sample=False,
             num_beams=1,
             use_cache=True,
         )
+    
+    print(f"⏱️  Generation: {time.time()-gen_start:.1f}s")
         
-    generated_ids_trimmed = [
-        out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-    ]
-    response = self.processor.batch_decode(
-        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-    )[0]
+    generated_ids_trimmed = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
+    response = self.processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
     
     torch.cuda.empty_cache()
+    
+    print(f"✅ Total: {time.time()-start:.1f}s")
     
     return response
 
 parser_module.DotsOCRParser._inference_with_hf = optimized_inference
+
+# Patch PDF processing to show progress
+original_parse_pdf = parser_module.DotsOCRParser.parse_pdf
+
+def parse_pdf_with_progress(self, input_path, filename, prompt_mode, save_dir):
+    import time
+    print(f"\n{'='*60}")
+    print(f"📄 Starting PDF processing: {input_path}")
+    print(f"{'='*60}\n")
+    
+    from dots_ocr.utils.doc_utils import load_images_from_pdf
+    
+    total_start = time.time()
+    print(f"📖 Loading PDF pages...")
+    images_origin = load_images_from_pdf(input_path, dpi=self.dpi)
+    total_pages = len(images_origin)
+    print(f"✅ Loaded {total_pages} pages in {time.time()-total_start:.1f}s\n")
+    
+    results = []
+    for i, image in enumerate(images_origin):
+        page_start = time.time()
+        print(f"\n{'─'*60}")
+        print(f"📄 Processing page {i+1}/{total_pages}...")
+        print(f"{'─'*60}")
+        
+        result = self._parse_single_image(
+            origin_image=image,
+            prompt_mode=prompt_mode,
+            save_dir=save_dir,
+            save_name=filename,
+            source="pdf",
+            page_idx=i,
+        )
+        result['file_path'] = input_path
+        results.append(result)
+        
+        elapsed = time.time() - page_start
+        remaining = (total_pages - i - 1) * elapsed
+        print(f"✅ Page {i+1}/{total_pages} done in {elapsed:.1f}s")
+        print(f"⏳ Estimated remaining: {remaining:.0f}s ({remaining/60:.1f} min)\n")
+    
+    total_time = time.time() - total_start
+    print(f"\n{'='*60}")
+    print(f"✅ PDF COMPLETE: {total_pages} pages in {total_time:.1f}s ({total_time/60:.1f} min)")
+    print(f"📊 Average: {total_time/total_pages:.1f}s per page")
+    print(f"{'='*60}\n")
+    
+    return results
+
+parser_module.DotsOCRParser.parse_pdf = parse_pdf_with_progress
 
 with open("demo/demo_gradio.py", 'r') as f:
     demo_code = f.read()
@@ -340,5 +374,5 @@ demo_code = demo_code.replace(
 )
 
 sys.argv = ['demo_gradio.py', '7860']
-print("Starting GPU-only optimized demo on port 7860...")
+print("Starting demo with detailed progress tracking...")
 exec(demo_code)
