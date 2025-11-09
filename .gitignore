@@ -1,0 +1,32 @@
+dots.ocr
+NOTE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Data directories
+data/
+uploads/
+results/
+*.pyc
+
+# Environment
+.env
+.env.local
+venv/
+env/
+
+# Mac
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Backups
+*_backup.py
