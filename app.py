@@ -96,6 +96,22 @@ demo_code = demo_code.replace('show_copy_button=True,', '')
 demo_code = demo_code.replace('show_copy_button=False,', '')
 demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
+# Fix layout - make left column smaller and right columns bigger
+demo_code = demo_code.replace(
+    'with gr.Column(scale=1, elem_id="left-panel"):',
+    'with gr.Column(scale=1, elem_id="left-panel"):'
+)
+demo_code = demo_code.replace(
+    'with gr.Column(scale=6, variant="compact"):',
+    'with gr.Column(scale=8, variant="compact"):'
+)
+
+# Make the result columns equal width
+demo_code = demo_code.replace(
+    'with gr.Column(scale=3):',
+    'with gr.Column(scale=1):'
+)
+
 # Run the demo
 sys.argv = ['demo_gradio.py', '7860']
 print("Starting Gradio demo on port 7860...")
