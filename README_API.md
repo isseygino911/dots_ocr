@@ -1,5 +1,12 @@
 # DotsOCR API - React Frontend + FastAPI Backend
 
+## 📚 Documentation
+
+- **[Complete API Usage Guide](./API_USAGE_GUIDE.md)** - Comprehensive examples for Python, JavaScript, and React
+- **[Quick Start Guide](./QUICKSTART.md)** - Get started in 5 minutes
+- **[Deployment Guide](./DEPLOYMENT.md)** - Deploy to production
+- **[Interactive API Docs](https://isseygino911-dots-ocr-parser.hf.space/docs)** - Test endpoints in your browser
+
 ## Overview
 
 This project provides a modern web interface for the DotsOCR document parser using:
