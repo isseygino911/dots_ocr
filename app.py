@@ -393,9 +393,12 @@ async def parse_image(
     prompt_mode: str = Form("prompt_layout_all_en")
 ):
     """Upload and parse a single image"""
-    # Validate file type
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(400, "File must be an image")
+    # Validate file type by extension (more reliable than content_type)
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', '.webp'}
+    file_ext = Path(file.filename).suffix.lower()
+
+    if file_ext not in allowed_extensions:
+        raise HTTPException(400, f"File must be an image. Supported formats: {', '.join(allowed_extensions)}")
 
     # Create job
     job_id = str(uuid.uuid4())
@@ -436,8 +439,9 @@ async def parse_pdf(
     prompt_mode: str = Form("prompt_layout_all_en")
 ):
     """Upload and parse a PDF document"""
-    # Validate file type
-    if file.content_type != "application/pdf":
+    # Validate file type by extension
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext != '.pdf':
         raise HTTPException(400, "File must be a PDF")
 
     # Create job
