@@ -96,20 +96,30 @@ demo_code = demo_code.replace('show_copy_button=True,', '')
 demo_code = demo_code.replace('show_copy_button=False,', '')
 demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
-# Fix layout - make left column smaller and right columns bigger
-demo_code = demo_code.replace(
-    'with gr.Column(scale=1, elem_id="left-panel"):',
-    'with gr.Column(scale=1, elem_id="left-panel"):'
-)
-demo_code = demo_code.replace(
-    'with gr.Column(scale=6, variant="compact"):',
-    'with gr.Column(scale=8, variant="compact"):'
-)
+# Add CSS to fix overflow and contain content properly
+css_fix = '''
+    #markdown_output {
+        min-height: 800px;
+        max-height: 800px;
+        overflow: auto;
+    }
+    
+    /* Ensure columns don't overflow */
+    .gr-box {
+        overflow: hidden;
+    }
+    
+    /* Fix markdown rendering container */
+    #markdown_output .prose {
+        max-width: 100% !important;
+        overflow-wrap: break-word;
+    }
+'''
 
-# Make the result columns equal width
+# Insert the CSS fix into the existing CSS
 demo_code = demo_code.replace(
-    'with gr.Column(scale=3):',
-    'with gr.Column(scale=1):'
+    '    css = """',
+    f'    css = """{css_fix}'
 )
 
 # Run the demo
