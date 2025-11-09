@@ -377,6 +377,11 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
 
 @app.get("/")
 async def root():
+    """
+    API Root - Welcome endpoint
+
+    Returns basic API information and links to documentation.
+    """
     return {
         "message": "DotsOCR API",
         "docs": "/docs",
@@ -385,14 +390,86 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    """
+    Health Check
+
+    Check if the API is running and GPU is available.
+
+    Returns:
+        - status: "healthy" if the API is running
+        - gpu_available: true if CUDA GPU is available
+
+    Example:
+        ```bash
+        curl https://isseygino911-dots-ocr-parser.hf.space/health
+        ```
+    """
     return {"status": "healthy", "gpu_available": True}
 
 @app.post("/api/parse/image")
 async def parse_image(
-    file: UploadFile = File(...),
-    prompt_mode: str = Form("prompt_layout_all_en")
+    file: UploadFile = File(..., description="Image file to parse"),
+    prompt_mode: str = Form("prompt_layout_all_en", description="Parsing mode: prompt_layout_all_en (full layout + text), prompt_layout_only_en (layout only), or prompt_ocr (text only)")
 ):
-    """Upload and parse a single image"""
+    """
+    Parse Image - Extract text and layout from an image
+
+    Upload an image file and parse it to extract text and layout information.
+    The processing happens asynchronously - you'll receive a job_id to track progress.
+
+    Supported formats: .jpg, .jpeg, .png, .bmp, .tiff, .tif, .gif, .webp
+
+    Parsing Modes:
+        - **prompt_layout_all_en** (default): Full layout detection + text extraction
+        - **prompt_layout_only_en**: Layout detection only, no text extraction
+        - **prompt_ocr**: Text extraction only, no layout detection
+
+    Returns:
+        - job_id: Unique identifier to track this job
+        - status: "queued" (processing will start immediately)
+
+    Example (cURL):
+        ```bash
+        curl -X POST https://isseygino911-dots-ocr-parser.hf.space/api/parse/image \\
+          -F "file=@document.jpg" \\
+          -F "prompt_mode=prompt_layout_all_en"
+        ```
+
+    Example (Python):
+        ```python
+        import requests
+
+        with open("document.jpg", "rb") as f:
+            response = requests.post(
+                "https://isseygino911-dots-ocr-parser.hf.space/api/parse/image",
+                files={"file": f},
+                data={"prompt_mode": "prompt_layout_all_en"}
+            )
+
+        job_id = response.json()["job_id"]
+        print(f"Job ID: {job_id}")
+        ```
+
+    Example (JavaScript):
+        ```javascript
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('prompt_mode', 'prompt_layout_all_en');
+
+        const response = await fetch(
+            'https://isseygino911-dots-ocr-parser.hf.space/api/parse/image',
+            { method: 'POST', body: formData }
+        );
+
+        const { job_id } = await response.json();
+        console.log('Job ID:', job_id);
+        ```
+
+    Next Steps:
+        1. Use GET /api/jobs/{job_id}/status to monitor progress
+        2. Use GET /api/jobs/{job_id}/results to get parsed data
+        3. Use GET /api/jobs/{job_id}/download to download ZIP
+    """
     # Validate file type by extension (more reliable than content_type)
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', '.webp'}
     file_ext = Path(file.filename).suffix.lower()
@@ -435,10 +512,69 @@ async def parse_image(
 
 @app.post("/api/parse/pdf")
 async def parse_pdf(
-    file: UploadFile = File(...),
-    prompt_mode: str = Form("prompt_layout_all_en")
+    file: UploadFile = File(..., description="PDF file to parse"),
+    prompt_mode: str = Form("prompt_layout_all_en", description="Parsing mode for all pages")
 ):
-    """Upload and parse a PDF document"""
+    """
+    Parse PDF - Extract text and layout from a PDF document
+
+    Upload a PDF file and parse all pages to extract text and layout information.
+    Each page is processed sequentially with real-time progress updates.
+
+    Parsing Modes:
+        - **prompt_layout_all_en** (default): Full layout detection + text extraction
+        - **prompt_layout_only_en**: Layout detection only, no text extraction
+        - **prompt_ocr**: Text extraction only, no layout detection
+
+    Processing Time:
+        - ~10-15 seconds per page
+        - Progress updates available via WebSocket or polling
+
+    Returns:
+        - job_id: Unique identifier to track this job
+        - status: "queued" (processing will start immediately)
+
+    Example (cURL):
+        ```bash
+        curl -X POST https://isseygino911-dots-ocr-parser.hf.space/api/parse/pdf \\
+          -F "file=@document.pdf" \\
+          -F "prompt_mode=prompt_layout_all_en"
+        ```
+
+    Example (Python):
+        ```python
+        import requests
+        import time
+
+        with open("document.pdf", "rb") as f:
+            response = requests.post(
+                "https://isseygino911-dots-ocr-parser.hf.space/api/parse/pdf",
+                files={"file": f},
+                data={"prompt_mode": "prompt_layout_all_en"}
+            )
+
+        job_id = response.json()["job_id"]
+
+        # Poll for completion
+        while True:
+            status = requests.get(
+                f"https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/status"
+            ).json()
+
+            print(f"Progress: {status['progress_percent']:.0f}%")
+
+            if status['status'] == 'completed':
+                break
+
+            time.sleep(2)
+        ```
+
+    Next Steps:
+        1. Use GET /api/jobs/{job_id}/status to monitor progress
+        2. Use WS /api/jobs/{job_id}/stream for real-time updates
+        3. Use GET /api/jobs/{job_id}/results to get all pages
+        4. Use GET /api/jobs/{job_id}/download to download ZIP
+    """
     # Validate file type by extension
     file_ext = Path(file.filename).suffix.lower()
     if file_ext != '.pdf':
@@ -479,7 +615,72 @@ async def parse_pdf(
 
 @app.get("/api/jobs/{job_id}/status")
 async def get_job_status(job_id: str):
-    """Get job status and progress"""
+    """
+    Get Job Status - Monitor processing progress
+
+    Check the current status and progress of a parsing job.
+    Poll this endpoint every 2-3 seconds to monitor progress.
+
+    Status Values:
+        - **queued**: Job is waiting to be processed
+        - **processing**: Currently processing (see progress_percent for progress)
+        - **completed**: Processing finished successfully
+        - **failed**: An error occurred (see error field)
+
+    Returns:
+        - job_id: The job identifier
+        - status: Current job status
+        - progress_percent: Progress from 0 to 100
+        - message: Current processing message
+        - current_page: Current page being processed (for PDFs)
+        - total_pages: Total number of pages (for PDFs)
+        - created_at: Job creation timestamp
+        - updated_at: Last update timestamp
+        - error: Error message (only if status is "failed")
+
+    Example (Python):
+        ```python
+        import requests
+        import time
+
+        job_id = "your-job-id"
+
+        while True:
+            response = requests.get(
+                f"https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/status"
+            )
+            status = response.json()
+
+            print(f"Status: {status['status']} - {status['progress_percent']:.0f}%")
+
+            if status['status'] in ['completed', 'failed']:
+                break
+
+            time.sleep(2)
+        ```
+
+    Example (JavaScript):
+        ```javascript
+        async function pollStatus(jobId) {
+            while (true) {
+                const response = await fetch(
+                    `https://isseygino911-dots-ocr-parser.hf.space/api/jobs/${jobId}/status`
+                );
+                const status = await response.json();
+
+                console.log(`Progress: ${status.progress_percent}%`);
+
+                if (status.status === 'completed' || status.status === 'failed') {
+                    break;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+        ```
+
+    Alternative: Use WebSocket at /api/jobs/{job_id}/stream for real-time updates
+    """
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
 
@@ -487,7 +688,63 @@ async def get_job_status(job_id: str):
 
 @app.get("/api/jobs/{job_id}/results")
 async def get_job_results(job_id: str):
-    """Get job results"""
+    """
+    Get Job Results - Retrieve parsed document data
+
+    Get the complete parsing results including extracted text, layout information,
+    and bounding boxes for all detected elements.
+
+    Returns (when completed):
+        - job_id: The job identifier
+        - status: "completed"
+        - results: Parsed data with structure:
+            - pages: Array of page results
+                - page_number: Page index (1-based)
+                - markdown: Extracted text in markdown format
+                - json_output: Structured data with:
+                    - bboxes: Bounding box coordinates [[x1,y1,x2,y2], ...]
+                    - labels: Element types ["title", "paragraph", "table", ...]
+                    - pred_text: Extracted text for each element
+                - annotated_image_path: URL to view annotated image
+        - download_url: URL to download all results as ZIP
+
+    Returns (when not completed):
+        - job_id: The job identifier
+        - status: Current status ("queued", "processing", or "failed")
+        - message: Status message
+        - results: null
+
+    Example (Python):
+        ```python
+        import requests
+
+        response = requests.get(
+            f"https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/results"
+        )
+        data = response.json()
+
+        if data['status'] == 'completed':
+            for page in data['results']['pages']:
+                print(f"Page {page['page_number']}:")
+                print(page['markdown'][:200])  # First 200 chars
+                print(f"Detected {len(page['json_output']['labels'])} elements")
+        ```
+
+    Example (JavaScript):
+        ```javascript
+        const response = await fetch(
+            `https://isseygino911-dots-ocr-parser.hf.space/api/jobs/${jobId}/results`
+        );
+        const data = await response.json();
+
+        if (data.status === 'completed') {
+            data.results.pages.forEach(page => {
+                console.log(`Page ${page.page_number}:`);
+                console.log(page.markdown.substring(0, 200));
+            });
+        }
+        ```
+    """
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
 
@@ -510,7 +767,60 @@ async def get_job_results(job_id: str):
 
 @app.get("/api/jobs/{job_id}/download")
 async def download_results(job_id: str):
-    """Download results as ZIP file"""
+    """
+    Download Results - Get all results as a ZIP file
+
+    Download a ZIP archive containing all parsing results including:
+    - Annotated images with bounding boxes drawn (PNG files)
+    - JSON files with structured data (bboxes, labels, text)
+    - Markdown files with extracted text
+    - JSONL file with all results
+
+    The ZIP file is only available after the job status is "completed".
+
+    Returns:
+        ZIP file download with name: results_{filename}.zip
+
+    Example (Python - download to file):
+        ```python
+        import requests
+
+        response = requests.get(
+            f"https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/download"
+        )
+
+        with open("results.zip", "wb") as f:
+            f.write(response.content)
+
+        print("Downloaded results.zip")
+        ```
+
+    Example (JavaScript - trigger browser download):
+        ```javascript
+        const downloadUrl =
+            `https://isseygino911-dots-ocr-parser.hf.space/api/jobs/${jobId}/download`;
+
+        // Option 1: Open in new tab (triggers download)
+        window.open(downloadUrl, '_blank');
+
+        // Option 2: Use download link
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = 'results.zip';
+        link.click();
+        ```
+
+    Example (cURL):
+        ```bash
+        curl -O https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/download
+        ```
+
+    ZIP Contents:
+        - page_1.png, page_2.png, ... (annotated images)
+        - page_1.json, page_2.json, ... (structured data)
+        - page_1.md, page_2.md, ... (markdown text)
+        - {filename}.jsonl (all results in JSONL format)
+    """
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
 
@@ -533,7 +843,89 @@ async def download_results(job_id: str):
 
 @app.websocket("/api/jobs/{job_id}/stream")
 async def stream_progress(websocket: WebSocket, job_id: str):
-    """WebSocket endpoint for real-time progress updates"""
+    """
+    WebSocket Stream - Real-time progress updates
+
+    Connect via WebSocket to receive real-time progress updates for a job.
+    More efficient than HTTP polling for long-running jobs (PDFs with many pages).
+
+    Message Format (received from server):
+        ```json
+        {
+            "event": "status_update",
+            "data": {
+                "job_id": "...",
+                "status": "processing",
+                "progress_percent": 50.0,
+                "current_page": 5,
+                "total_pages": 10,
+                "message": "Processing page 5/10..."
+            }
+        }
+        ```
+
+    Client Actions:
+        - Send "ping" message to request current status
+        - Server automatically sends updates when progress changes
+        - Connection closes when job completes or fails
+
+    Example (JavaScript):
+        ```javascript
+        const ws = new WebSocket(
+            'wss://isseygino911-dots-ocr-parser.hf.space/api/jobs/YOUR-JOB-ID/stream'
+        );
+
+        ws.onopen = () => {
+            console.log('Connected');
+        };
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            const status = message.data;
+
+            console.log(`Progress: ${status.progress_percent}%`);
+            console.log(`Message: ${status.message}`);
+
+            if (status.status === 'completed') {
+                console.log('Processing complete!');
+                ws.close();
+            }
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            // Fallback to HTTP polling
+        };
+
+        // Optional: Send ping to request current status
+        ws.send('ping');
+        ```
+
+    Example (Python with websockets):
+        ```python
+        import asyncio
+        import websockets
+        import json
+
+        async def monitor_job(job_id):
+            uri = f"wss://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/stream"
+
+            async with websockets.connect(uri) as websocket:
+                while True:
+                    message = await websocket.recv()
+                    data = json.loads(message)
+                    status = data['data']
+
+                    print(f"Progress: {status['progress_percent']:.0f}%")
+
+                    if status['status'] in ['completed', 'failed']:
+                        break
+
+        asyncio.run(monitor_job("your-job-id"))
+        ```
+
+    Fallback: If WebSocket connection fails, use GET /api/jobs/{job_id}/status with polling
+    """
     await websocket.accept()
 
     # Register connection
