@@ -29,7 +29,7 @@ print(f"Model downloaded to: {model_path}")
 
 os.chdir("./dots.ocr")
 
-print("Patching demo for HF backend...")
+print("Patching demo for HF backend with optimizations...")
 sys.path.insert(0, os.getcwd())
 
 import dots_ocr.parser as parser_module
@@ -44,6 +44,7 @@ def patched_load(self):
     model_path = os.path.abspath("./weights/DotsOCR")
     print(f"Loading model from: {model_path}")
     
+    # Optimized loading for L4 GPU
     self.model = AutoModelForCausalLM.from_pretrained(
         model_path,
         attn_implementation="flash_attention_2",
@@ -51,14 +52,90 @@ def patched_load(self):
         device_map="auto",
         trust_remote_code=True,
     )
+    
+    # Set model to eval mode for faster inference
+    self.model.eval()
+    
+    # Enable CUDA optimizations
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    
     self.processor = AutoProcessor.from_pretrained(
         model_path,
         trust_remote_code=True,
         use_fast=True
     )
     self.process_vision_info = process_vision_info
+    
+    print(f"Model loaded on device: {self.model.device}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
 
 parser_module.DotsOCRParser._load_hf_model = patched_load
+
+# Also optimize the inference method
+original_inference = parser_module.DotsOCRParser._inference_with_hf
+
+def optimized_inference(self, image, prompt):
+    import torch
+    
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
+
+    # Preparation for inference
+    text = self.processor.apply_chat_template(
+        messages, 
+        tokenize=False, 
+        add_generation_prompt=True
+    )
+    image_inputs, video_inputs = self.process_vision_info(messages)
+    inputs = self.processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+
+    inputs = inputs.to("cuda")
+
+    # Optimized generation parameters for speed
+    with torch.inference_mode():  # Faster than no_grad
+        generated_ids = self.model.generate(
+            **inputs, 
+            max_new_tokens=12000,  # Reduced from 24000 for faster generation
+            do_sample=False,  # Greedy decoding is faster
+            num_beams=1,  # No beam search for speed
+            temperature=None,  # Not used with do_sample=False
+            top_p=None,  # Not used with do_sample=False
+            use_cache=True,  # Enable KV cache
+        )
+        
+    generated_ids_trimmed = [
+        out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    response = self.processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )[0]
+    
+    # Clear cache after inference
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    return response
+
+parser_module.DotsOCRParser._inference_with_hf = optimized_inference
 
 with open("demo/demo_gradio.py", 'r') as f:
     demo_code = f.read()
@@ -88,7 +165,7 @@ demo_code = demo_code.replace('show_copy_button=True,', '')
 demo_code = demo_code.replace('show_copy_button=False,', '')
 demo_code = demo_code.replace('theme="ocean"', 'theme=gr.themes.Soft()')
 
-# Reorganize layout with proper containment
+# Reorganize layout
 old_layout = '''            with gr.Column(scale=6, variant="compact"):
                 with gr.Row():
                     # Result Image
@@ -167,7 +244,6 @@ new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="
                         elem_id="result_image"
                     )
                     
-                    # Page navigation
                     with gr.Row():
                         prev_btn = gr.Button("⬅ Previous", size="sm")
                         page_info = gr.HTML(
@@ -176,13 +252,12 @@ new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="
                         )
                         next_btn = gr.Button("Next ➡", size="sm")
                     
-                    # Info Display
                     info_display = gr.Markdown(
                         "Waiting for processing results...",
                         elem_id="info_box"
                     )
                 
-                # Results section - contained properly
+                # Results section
                 with gr.Group(elem_id="results_section"):
                     gr.Markdown("### ✔️ Result Display")
                     
@@ -219,27 +294,16 @@ new_layout = '''            with gr.Column(scale=6, variant="compact", elem_id="
 
 demo_code = demo_code.replace(old_layout, new_layout)
 
-# Add comprehensive CSS fixes for containment
+# Add CSS
 css_addition = '''
     
-    /* Main content column */
     #main_content_column {
         display: flex;
         flex-direction: column;
         gap: 20px;
     }
     
-    /* Preview section containment */
-    #preview_section {
-        width: 100%;
-        overflow: hidden;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 15px;
-    }
-    
-    /* Results section containment - CRITICAL */
-    #results_section {
+    #preview_section, #results_section {
         width: 100%;
         max-width: 100%;
         overflow: hidden;
@@ -248,14 +312,12 @@ css_addition = '''
         padding: 15px;
     }
     
-    /* Markdown tabs container */
     #markdown_tabs {
         width: 100% !important;
         max-width: 100% !important;
         overflow: hidden !important;
     }
     
-    /* Markdown output containment */
     #markdown_output {
         width: 100% !important;
         max-width: 100% !important;
@@ -271,13 +333,11 @@ css_addition = '''
         overflow-wrap: break-word;
     }
     
-    /* Text outputs */
     #markdown_raw_output, #json_output {
         width: 100% !important;
         max-width: 100% !important;
     }
     
-    /* Ensure all content stays within bounds */
     #results_section * {
         max-width: 100%;
         box-sizing: border-box;
@@ -286,12 +346,11 @@ css_addition = '''
 
 demo_code = demo_code.replace('    footer {', css_addition + '\n    footer {')
 
-# Suppress warnings
 demo_code = demo_code.replace(
     'demo.launch(server_name="0.0.0.0", server_port=port, debug=True)',
     'demo.launch(server_name="0.0.0.0", server_port=port, show_api=False)'
 )
 
 sys.argv = ['demo_gradio.py', '7860']
-print("Starting Gradio demo on port 7860...")
+print("Starting optimized Gradio demo on port 7860...")
 exec(demo_code)
