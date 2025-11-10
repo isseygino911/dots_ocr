@@ -156,7 +156,7 @@ def parse_pdf_with_progress(self, input_path, filename, prompt_mode, save_dir):
         job_id = getattr(self, '_current_job_id', None)
         if job_id and job_id in progress_callbacks:
             callback = progress_callbacks[job_id]
-            asyncio.run(callback(i + 1, total_pages, f"Processing page {i+1}/{total_pages}"))
+            callback(i + 1, total_pages, f"Processing page {i+1}/{total_pages}")
 
         result = self._parse_single_image(
             origin_image=image,
