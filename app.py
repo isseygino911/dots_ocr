@@ -147,13 +147,18 @@ def parse_pdf_with_progress(self, input_path, filename, prompt_mode, save_dir):
 
     results = []
     for i, image in enumerate(images_origin):
+        # Check for cancellation before starting this page
+        job_id = getattr(self, '_current_job_id', None)
+        if job_id and job_id in cancelled_jobs:
+            print(f"⚠️  Job {job_id} cancelled, stopping PDF processing")
+            raise Exception("Job cancelled by user")
+
         page_start = time.time()
         print(f"\n{'─'*60}")
         print(f"📄 Processing page {i+1}/{total_pages}...")
         print(f"{'─'*60}")
 
         # Call progress callback if registered
-        job_id = getattr(self, '_current_job_id', None)
         if job_id and job_id in progress_callbacks:
             callback = progress_callbacks[job_id]
             callback(i + 1, total_pages, f"Processing page {i+1}/{total_pages}")
@@ -218,6 +223,9 @@ active_connections: Dict[str, List[WebSocket]] = {}
 
 # Cancellation flags
 cancelled_jobs: set = set()
+
+# Custom prompts storage (in-memory, could be replaced with database)
+custom_prompts: Dict[str, Dict[str, str]] = {}  # {prompt_id: {"name": "...", "content": "..."}}
 
 # Initialize parser
 from dots_ocr.parser import DotsOCRParser
@@ -336,13 +344,31 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
             message="Starting document processing..."
         )
 
-        # Process file - specify output_dir to save results in job directory
-        results = dots_parser.parse_file(
-            input_path=str(file_path),
-            output_dir=str(result_dir),
-            prompt_mode=prompt_mode,
-            bbox=None
-        )
+        # Determine actual prompt to use
+        # If it's a custom prompt, we need to temporarily add it to the prompts dict
+        from dots_ocr.utils import prompts as prompts_module
+
+        actual_prompt_mode = prompt_mode
+        temp_prompt_added = False
+
+        if prompt_mode.startswith("custom_") and prompt_mode in custom_prompts:
+            # Add custom prompt to the module's dict temporarily
+            custom_content = custom_prompts[prompt_mode]["content"]
+            prompts_module.dict_promptmode_to_prompt[prompt_mode] = custom_content
+            temp_prompt_added = True
+
+        try:
+            # Process file - specify output_dir to save results in job directory
+            results = dots_parser.parse_file(
+                input_path=str(file_path),
+                output_dir=str(result_dir),
+                prompt_mode=actual_prompt_mode,
+                bbox=None
+            )
+        finally:
+            # Clean up temp prompt if added
+            if temp_prompt_added and prompt_mode in prompts_module.dict_promptmode_to_prompt:
+                del prompts_module.dict_promptmode_to_prompt[prompt_mode]
 
         # Clean up callback
         if job_id in progress_callbacks:
@@ -1098,6 +1124,199 @@ async def get_result_file(job_id: str, filename: str):
         raise HTTPException(404, "File not found")
 
     return FileResponse(file_path)
+
+# ============================================================================
+# Custom Prompt Management Endpoints
+# ============================================================================
+
+@app.get("/api/prompts")
+async def list_prompts():
+    """
+    List All Prompts - Get default and custom prompts
+
+    Returns all available prompts including both default (from DotsOCR library)
+    and user-created custom prompts.
+
+    Returns:
+        - default_prompts: Array of default prompt objects
+        - custom_prompts: Array of custom prompt objects
+
+    Each prompt object contains:
+        - id: Prompt identifier
+        - name: Display name
+        - content: Prompt text
+        - is_custom: Boolean indicating if it's a custom prompt
+    """
+    from dots_ocr.utils.prompts import dict_promptmode_to_prompt
+
+    # Default prompts from DotsOCR library
+    default_prompt_names = {
+        "prompt_layout_all_en": "Full Layout + Text (Default)",
+        "prompt_layout_only_en": "Layout Only (No Text)",
+        "prompt_ocr": "Text Only (Markdown)",
+    }
+
+    default_prompts = [
+        {
+            "id": prompt_id,
+            "name": name,
+            "content": dict_promptmode_to_prompt[prompt_id],
+            "is_custom": False,
+            "is_default": True
+        }
+        for prompt_id, name in default_prompt_names.items()
+    ]
+
+    # Custom prompts
+    custom_prompt_list = [
+        {
+            "id": prompt_id,
+            "name": data["name"],
+            "content": data["content"],
+            "is_custom": True,
+            "is_default": False
+        }
+        for prompt_id, data in custom_prompts.items()
+    ]
+
+    return {
+        "default_prompts": default_prompts,
+        "custom_prompts": custom_prompt_list
+    }
+
+@app.post("/api/prompts")
+async def create_custom_prompt(
+    name: str = Form(..., description="Display name for the custom prompt"),
+    content: str = Form(..., description="The prompt text content")
+):
+    """
+    Create Custom Prompt - Save a new custom prompt
+
+    Create and save a custom prompt that can be used for document parsing.
+    The prompt will be available in the prompt selection dropdown.
+
+    Args:
+        - name: A display name for the prompt (e.g., "My Table Extractor")
+        - content: The full prompt text
+
+    Returns:
+        - prompt_id: Unique identifier for the created prompt
+        - name: Display name
+        - content: Prompt text
+
+    Example (cURL):
+        ```bash
+        curl -X POST https://isseygino911-dots-ocr-parser.hf.space/api/prompts \\
+          -F "name=My Custom Prompt" \\
+          -F "content=Extract all tables from this document..."
+        ```
+
+    Example (Python):
+        ```python
+        import requests
+
+        response = requests.post(
+            "https://isseygino911-dots-ocr-parser.hf.space/api/prompts",
+            data={
+                "name": "My Table Extractor",
+                "content": "Extract all tables as HTML..."
+            }
+        )
+        prompt_id = response.json()["prompt_id"]
+        ```
+    """
+    # Generate unique ID
+    prompt_id = f"custom_{str(uuid.uuid4())[:8]}"
+
+    # Save custom prompt
+    custom_prompts[prompt_id] = {
+        "name": name,
+        "content": content
+    }
+
+    return {
+        "prompt_id": prompt_id,
+        "name": name,
+        "content": content,
+        "is_custom": True
+    }
+
+@app.get("/api/prompts/{prompt_id}")
+async def get_prompt(prompt_id: str):
+    """
+    Get Prompt Details - Retrieve a specific prompt
+
+    Get the details of a specific prompt by its ID, including both
+    default and custom prompts.
+
+    Args:
+        - prompt_id: The prompt identifier
+
+    Returns:
+        - id: Prompt identifier
+        - name: Display name
+        - content: Prompt text
+        - is_custom: Boolean indicating if it's custom
+    """
+    from dots_ocr.utils.prompts import dict_promptmode_to_prompt
+
+    # Check if it's a default prompt
+    if prompt_id in dict_promptmode_to_prompt:
+        default_names = {
+            "prompt_layout_all_en": "Full Layout + Text (Default)",
+            "prompt_layout_only_en": "Layout Only (No Text)",
+            "prompt_ocr": "Text Only (Markdown)",
+        }
+        return {
+            "id": prompt_id,
+            "name": default_names.get(prompt_id, prompt_id),
+            "content": dict_promptmode_to_prompt[prompt_id],
+            "is_custom": False,
+            "is_default": True
+        }
+
+    # Check if it's a custom prompt
+    if prompt_id in custom_prompts:
+        return {
+            "id": prompt_id,
+            "name": custom_prompts[prompt_id]["name"],
+            "content": custom_prompts[prompt_id]["content"],
+            "is_custom": True,
+            "is_default": False
+        }
+
+    raise HTTPException(404, "Prompt not found")
+
+@app.delete("/api/prompts/{prompt_id}")
+async def delete_custom_prompt(prompt_id: str):
+    """
+    Delete Custom Prompt - Remove a custom prompt
+
+    Delete a user-created custom prompt. Default prompts cannot be deleted.
+
+    Args:
+        - prompt_id: The custom prompt identifier to delete
+
+    Returns:
+        - message: Success message
+
+    Example (cURL):
+        ```bash
+        curl -X DELETE https://isseygino911-dots-ocr-parser.hf.space/api/prompts/custom_abc123
+        ```
+    """
+    # Prevent deletion of default prompts
+    from dots_ocr.utils.prompts import dict_promptmode_to_prompt
+    if prompt_id in dict_promptmode_to_prompt:
+        raise HTTPException(403, "Cannot delete default prompts")
+
+    # Delete custom prompt
+    if prompt_id not in custom_prompts:
+        raise HTTPException(404, "Custom prompt not found")
+
+    del custom_prompts[prompt_id]
+
+    return {"message": "Custom prompt deleted successfully", "prompt_id": prompt_id}
 
 # Run server
 if __name__ == "__main__":
