@@ -571,6 +571,15 @@ async def parse_image(
         2. Use GET /api/jobs/{job_id}/results to get parsed data
         3. Use GET /api/jobs/{job_id}/download to download ZIP
     """
+    # Log API call for debugging and n8n integration
+    print(f"\n{'='*80}")
+    print(f"📤 API ENDPOINT CALLED: POST /api/parse/image")
+    print(f"📁 File: {file.filename}")
+    print(f"📏 Size: {file.size if hasattr(file, 'size') else 'unknown'} bytes")
+    print(f"🎯 Prompt Mode: {prompt_mode}")
+    print(f"📋 Content-Type: {file.content_type}")
+    print(f"{'='*80}\n")
+
     # Validate file type by extension (more reliable than content_type)
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', '.webp'}
     file_ext = Path(file.filename).suffix.lower()
@@ -676,6 +685,15 @@ async def parse_pdf(
         3. Use GET /api/jobs/{job_id}/results to get all pages
         4. Use GET /api/jobs/{job_id}/download to download ZIP
     """
+    # Log API call for debugging and n8n integration
+    print(f"\n{'='*80}")
+    print(f"📤 API ENDPOINT CALLED: POST /api/parse/pdf")
+    print(f"📁 File: {file.filename}")
+    print(f"📏 Size: {file.size if hasattr(file, 'size') else 'unknown'} bytes")
+    print(f"🎯 Prompt Mode: {prompt_mode}")
+    print(f"📋 Content-Type: {file.content_type}")
+    print(f"{'='*80}\n")
+
     # Validate file type by extension
     file_ext = Path(file.filename).suffix.lower()
     if file_ext != '.pdf':
