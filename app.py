@@ -385,11 +385,32 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
 
         for idx, result in enumerate(results):
             page_num = idx + 1
+
+            # Read markdown content from file
+            markdown_content = ""
+            if 'md_content_path' in result and os.path.exists(result['md_content_path']):
+                with open(result['md_content_path'], 'r', encoding='utf-8') as f:
+                    markdown_content = f.read()
+
+            # Read JSON layout info from file
+            json_data = result  # Keep full result as fallback
+            if 'layout_info_path' in result and os.path.exists(result['layout_info_path']):
+                with open(result['layout_info_path'], 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+
+            # Get actual image filename (DotsOCR saves as .jpg, not .png)
+            # For PDFs: page_1.jpg, page_2.jpg, etc.
+            # For images: filename.jpg
+            if file_type == "pdf":
+                image_filename = f"page_{page_num}.jpg"
+            else:
+                image_filename = f"{filename}.jpg"
+
             page_data = {
                 "page_number": page_num,
-                "markdown": result.get("markdown", ""),
-                "json_output": result,
-                "annotated_image_path": f"/api/results/{job_id}/{filename}/page_{page_num}.png"
+                "markdown": markdown_content,
+                "json_output": json_data,
+                "annotated_image_path": f"/api/results/{job_id}/{filename}/{image_filename}"
             }
             formatted_results["pages"].append(page_data)
 
