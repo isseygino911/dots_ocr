@@ -351,11 +351,24 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
         actual_prompt_mode = prompt_mode
         temp_prompt_added = False
 
+        print(f"\n{'='*60}")
+        print(f"🎯 Prompt Mode Received: {prompt_mode}")
+        print(f"{'='*60}")
+
         if prompt_mode.startswith("custom_") and prompt_mode in custom_prompts:
             # Add custom prompt to the module's dict temporarily
             custom_content = custom_prompts[prompt_mode]["content"]
+            custom_name = custom_prompts[prompt_mode]["name"]
+            print(f"✅ Using CUSTOM prompt: {custom_name}")
+            print(f"📝 Custom prompt content (first 100 chars): {custom_content[:100]}...")
             prompts_module.dict_promptmode_to_prompt[prompt_mode] = custom_content
             temp_prompt_added = True
+        elif prompt_mode.startswith("custom_"):
+            print(f"⚠️  WARNING: Custom prompt '{prompt_mode}' not found in storage!")
+            print(f"📋 Available custom prompts: {list(custom_prompts.keys())}")
+        else:
+            print(f"✅ Using DEFAULT prompt: {prompt_mode}")
+        print(f"{'='*60}\n")
 
         try:
             # Process file - specify output_dir to save results in job directory
@@ -399,10 +412,11 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
                     json_data = json.load(f)
 
             # Get actual image filename (DotsOCR saves as .jpg, not .png)
-            # For PDFs: page_1.jpg, page_2.jpg, etc.
+            # For PDFs: DotsOCR creates {filename}_page_{0-based-idx}.jpg
             # For images: filename.jpg
             if file_type == "pdf":
-                image_filename = f"page_{page_num}.jpg"
+                # Use idx (0-based) not page_num (1-based)
+                image_filename = f"{filename}_page_{idx}.jpg"
             else:
                 image_filename = f"{filename}.jpg"
 
