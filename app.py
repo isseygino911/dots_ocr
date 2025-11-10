@@ -216,6 +216,9 @@ jobs: Dict[str, Dict] = {}
 # WebSocket connections
 active_connections: Dict[str, List[WebSocket]] = {}
 
+# Cancellation flags
+cancelled_jobs: set = set()
+
 # Initialize parser
 from dots_ocr.parser import DotsOCRParser
 
@@ -302,13 +305,28 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
         result_dir = RESULTS_DIR / job_id
         result_dir.mkdir(parents=True, exist_ok=True)
 
+        # Check if job was cancelled before starting
+        if job_id in cancelled_jobs:
+            update_job_status_sync(
+                job_id,
+                status="cancelled",
+                message="Job was cancelled before processing started"
+            )
+            cancelled_jobs.discard(job_id)
+            return
+
         # Set job_id on parser for progress tracking
         dots_parser._current_job_id = job_id
 
-        # Register progress callback (use sync version in thread)
-        progress_callbacks[job_id] = lambda c, t, m: update_job_status_sync(
-            job_id, "processing", current_page=c, total_pages=t, progress_percent=(c/t)*100, message=m
-        )
+        # Register progress callback (use sync version in thread) with cancellation check
+        def progress_with_cancel_check(c, t, m):
+            if job_id in cancelled_jobs:
+                raise Exception("Job cancelled by user")
+            update_job_status_sync(
+                job_id, "processing", current_page=c, total_pages=t, progress_percent=(c/t)*100, message=m
+            )
+
+        progress_callbacks[job_id] = progress_with_cancel_check
 
         # Update status to processing
         update_job_status_sync(
@@ -370,15 +388,30 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
         )
 
     except Exception as e:
-        print(f"Error processing job {job_id}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        update_job_status_sync(
-            job_id,
-            status="failed",
-            message=f"Processing failed: {str(e)}",
-            error=str(e)
-        )
+        # Check if this was a cancellation
+        if "cancelled by user" in str(e).lower() or job_id in cancelled_jobs:
+            print(f"Job {job_id} cancelled by user")
+            update_job_status_sync(
+                job_id,
+                status="cancelled",
+                message="Job cancelled by user"
+            )
+            cancelled_jobs.discard(job_id)
+        else:
+            print(f"Error processing job {job_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            update_job_status_sync(
+                job_id,
+                status="failed",
+                message=f"Processing failed: {str(e)}",
+                error=str(e)
+            )
+    finally:
+        # Clean up
+        if job_id in progress_callbacks:
+            del progress_callbacks[job_id]
+        cancelled_jobs.discard(job_id)
 
 # API Endpoints
 
@@ -847,6 +880,79 @@ async def download_results(job_id: str):
         media_type="application/zip",
         filename=f"results_{job['filename']}.zip"
     )
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    """
+    Cancel Job - Stop a running processing job
+
+    Cancel a job that is currently queued or processing. Once cancelled,
+    the job status will change to "cancelled" and processing will stop.
+
+    Note: Cancellation may take a few seconds to take effect, especially
+    if a page is currently being processed. The job will be cancelled
+    after the current page completes.
+
+    Returns:
+        - job_id: The job identifier
+        - status: Current status after cancellation request
+        - message: Confirmation message
+
+    Example (Python):
+        ```python
+        import requests
+
+        response = requests.post(
+            f"https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/cancel"
+        )
+        print(response.json())
+        ```
+
+    Example (JavaScript):
+        ```javascript
+        const response = await fetch(
+            `https://isseygino911-dots-ocr-parser.hf.space/api/jobs/${jobId}/cancel`,
+            { method: 'POST' }
+        );
+        const result = await response.json();
+        console.log(result.message);
+        ```
+
+    Example (cURL):
+        ```bash
+        curl -X POST https://isseygino911-dots-ocr-parser.hf.space/api/jobs/{job_id}/cancel
+        ```
+    """
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+
+    job = jobs[job_id]
+    current_status = job['status']
+
+    # Can only cancel queued or processing jobs
+    if current_status not in ['queued', 'processing']:
+        return {
+            "job_id": job_id,
+            "status": current_status,
+            "message": f"Cannot cancel job with status: {current_status}"
+        }
+
+    # Mark job for cancellation
+    cancelled_jobs.add(job_id)
+
+    # If job is still queued, mark it as cancelled immediately
+    if current_status == 'queued':
+        update_job_status_sync(
+            job_id,
+            status="cancelled",
+            message="Job cancelled before processing started"
+        )
+
+    return {
+        "job_id": job_id,
+        "status": "cancelling",
+        "message": "Cancellation requested. Job will be cancelled shortly."
+    }
 
 @app.websocket("/api/jobs/{job_id}/stream")
 async def stream_progress(websocket: WebSocket, job_id: str):
