@@ -255,8 +255,15 @@ class JobResult(BaseModel):
     download_url: Optional[str] = None
 
 # Helper functions
+def update_job_status_sync(job_id: str, status: str, **kwargs):
+    """Synchronous version - Update job status without WebSocket notifications"""
+    if job_id in jobs:
+        jobs[job_id]['status'] = status
+        jobs[job_id]['updated_at'] = datetime.now().isoformat()
+        jobs[job_id].update(kwargs)
+
 async def update_job_status(job_id: str, status: str, **kwargs):
-    """Update job status and notify WebSocket clients"""
+    """Async version - Update job status and notify WebSocket clients"""
     if job_id in jobs:
         jobs[job_id]['status'] = status
         jobs[job_id]['updated_at'] = datetime.now().isoformat()
@@ -298,18 +305,18 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
         # Set job_id on parser for progress tracking
         dots_parser._current_job_id = job_id
 
-        # Register progress callback
-        progress_callbacks[job_id] = lambda c, t, m: asyncio.run(update_job_status(
+        # Register progress callback (use sync version in thread)
+        progress_callbacks[job_id] = lambda c, t, m: update_job_status_sync(
             job_id, "processing", current_page=c, total_pages=t, progress_percent=(c/t)*100, message=m
-        ))
+        )
 
         # Update status to processing
-        asyncio.run(update_job_status(
+        update_job_status_sync(
             job_id,
             status="processing",
             progress_percent=0,
             message="Starting document processing..."
-        ))
+        )
 
         # Process file - specify output_dir to save results in job directory
         results = dots_parser.parse_file(
@@ -354,24 +361,24 @@ def process_document(job_id: str, file_path: Path, file_type: str, prompt_mode: 
         else:
             print(f"Warning: Parsed output directory not found: {parsed_output_dir}")
 
-        asyncio.run(update_job_status(
+        update_job_status_sync(
             job_id,
             status="completed",
             progress_percent=100,
             message="Processing completed successfully",
             download_url=f"/api/jobs/{job_id}/download"
-        ))
+        )
 
     except Exception as e:
         print(f"Error processing job {job_id}: {str(e)}")
         import traceback
         traceback.print_exc()
-        asyncio.run(update_job_status(
+        update_job_status_sync(
             job_id,
             status="failed",
             message=f"Processing failed: {str(e)}",
             error=str(e)
-        ))
+        )
 
 # API Endpoints
 
