@@ -1,0 +1,65 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.eggs
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Data directories (will be created fresh in container)
+data/
+uploads/
+results/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Model weights (if they exist locally - we download them in Dockerfile)
+dots.ocr/weights/
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+logs/
